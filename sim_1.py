@@ -13,6 +13,7 @@ import pickle
 import numpy as np
 
 import ant_sort
+import tables_and_plot
 
 class Play:
     def __init__(self):
@@ -23,6 +24,7 @@ class Play:
         self.batch_size = 64
         self.train_step = 2000
         self.update_step = 1000
+        self.tp = tables_and_plot.Create()
     
         '''storing the enviroment at the end of each episode'''
         self.enviroment = []
@@ -55,9 +57,15 @@ class Play:
                 self.action_tracker.append([0,0])
             '''increment the selected action for particular state'''
             indx = self.state_tracker.index(current_states[i].tolist())
-            self.action_tracker[indx][actions[i]] += 1
             
-            if actions[i] == 0:
+            if actions[i][0] == 1:
+                update_indx = 0
+            else:
+                update_indx = 1
+            
+            self.action_tracker[indx][update_indx] += 1
+            
+            if actions[i][0] == 1:
                 reward_1 = rewards[i]
                 reward_2 = rewards_anti_act[i]
             else:
@@ -71,46 +79,78 @@ class Play:
             self.q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
                                         self.action_tracker[indx][0], self.action_tracker[indx][1],
                                         reward_1, reward_2])
+    def one_hot_encode(self,action):
+        actions = np.zeros(2)
+        actions[action] = 1
+        return actions
     
     def create_model(self):
         #DQN
         state_input = Input(shape=(9,))
-        h1 = Dense(24, activation='relu')(state_input)
-        h2 = Dense(48, activation='relu')(h1)
-        h3 = Dense(24, activation='relu')(h2)
-        output = Dense(2, activation='relu')(h3)
-        model = Model(inputs=state_input, outputs=output)
+        state_h1 = Dense(24, activation='relu')(state_input)
+        state_h2 = Dense(48, activation='relu')(state_h1)
+        action_input = Input((2,))
+        action_h1 = Dense(24, activation='relu')(action_input)
+        action_h2 = Dense(48, activation='relu')(action_h1)
+        merged = keras.layers.Concatenate(axis=1)([state_h2, action_h2])
+        merged_h1 = Dense(24, activation='relu')(merged)
+        output = Dense(2, activation='relu')(merged_h1)
+        
+        model = Model(inputs = [state_input,action_input], outputs = output)
         adam  = Adam(lr=0.006)
         model.compile(loss="mse", optimizer=adam)
         
         return model
+    
+    def predict(self,model,state):
+        actions = np.array([1,1])
+        q_values = model.predict([state.reshape(1,9),actions.reshape((1,2))])
+        return q_values
+        
+    def epsilon_greedy_approach(self,model,state):
+        if random.random() < self.epsilon:
+            action = random.choice([0,1])
+        else:
+            q_values = self.predict(model, state)
+            action = np.argmax(q_values)
+        return action
     
     def calculate_target(self, batch, target_model):
         states, actions, rewards, next_states, rewards_anti_act = [], [], [], [], []
         for i in batch:
             state, action, reward, next_state, reward_anti_act = i
             states.append(state.reshape((9,)))
+            action = self.one_hot_encode(action)
+            action = np.array(action)
             actions.append(action)
             rewards.append(reward)
             next_states.append(next_state.reshape((9,)))
             rewards_anti_act.append(reward_anti_act)
         
         next_states = np.array(next_states)
-        next_q_values = target_model.predict(next_states)
+        actions = np.array(actions)
+        next_q_values = target_model.predict([next_states,actions])
         #caculating target and updating q values
         for i in range(len(batch)):
             next_q_value = max(next_q_values[i])
             target = rewards[i] + self.gamma * next_q_value
-            next_q_values[i][actions[i]] = target
+            if actions[i][0] == 1:
+                update_indx = 0
+            else:
+                update_indx = 1
+            next_q_values[i][update_indx] = target
         
         self.store(states, next_q_values, rewards, rewards_anti_act, actions)
         
-        return next_states, next_q_values
+        return [next_states, actions], next_q_values
     
     def training(self, x,y, model):
-        X = np.array(x)
-        Y = np.array(y)
-        model.fit(X, Y, batch_size=self.batch_size, verbose=0)
+        print("#########################TRAINING#############################")
+        print(len(x[0]), len(x[1]), len(y))
+        print("##############################################################")
+        # X = np.array(x)
+        # Y = np.array(y)
+        model.fit(x, y, batch_size=self.batch_size, verbose=2)
         return model
 
 if __name__ == "__main__" :
@@ -145,72 +185,69 @@ if __name__ == "__main__" :
                 if timestep >= play.train_step:
                     if timestep % play.update_step:
                             target_model.set_weights(model.get_weights())
-                    batch = random.sample(play.replay_buffer, 5)
+                    batch = random.sample(play.replay_buffer, play.batch_size)
                     x, y = play.calculate_target(batch, target_model)
                     model = play.training(x,y,model)
                     
                     if len(legal_actions)==2:
-                        q_value = target_model.predict(current_state.reshape(1,9))
-                        
-                        if random.random() < play.epsilon: 
-                            '''Returns the index of maximum q value'''
-                            action = np.argmax(q_value[0]) #q_value looks like [[q1, q2]] that is why using q_value[0]
-                        else:
-                            action = random.choice([0,1])
-                        
+                        action_indx = play.epsilon_greedy_approach(target_model, current_state)
                         a_flag = True
                     else:
-                        action = 0
+                        action_indx = 0
     
                 else:
                     if len(legal_actions)==2:
                         #randomly choose actions untill enough examples are generated
-                        action = random.choice([0,1])
+                        action_indx = random.choice([0,1])
                         '''flag is ture if there are 2 possible action, then q values are updated 
                         and sotred. Else only 1 action (PASS) is available so doesnt update of store the state '''
                         a_flag = True 
                     else:
-                        action = 0
                         
-                act = legal_actions[action]
+                        action_indx = 0
+                        
+                act = legal_actions[action_indx]
                 if a_flag == True:
                     next_state, map_to_food = env._apply_action(act,play.ant_id, current_location, current_state)
     
-                    anti_act = legal_actions[(action - 1)]
+                    anti_act = legal_actions[(action_indx - 1)]
                     next_state_fake, _ = env._apply_action(anti_act,play.ant_id, current_location, current_state, flag=False)
                     reward_anti_act = env._reward(current_state.tolist(), next_state_fake.tolist())
                     reward_anti_act = reward_anti_act*100
                     reward = env._reward(current_state.tolist(), next_state.tolist())
                     reward = reward*100
                     
-                    if action == 0:
+                    if action_indx == 0:
                         reward_1 = reward
                         reward_2 = reward_anti_act
                     else:
                         reward_1 = reward_anti_act
                         reward_2 = reward                
                     
-                    play.replay_buffer.append(np.array([current_state, action, reward, next_state, reward_anti_act]))
+                    play.replay_buffer.append(np.array([current_state, action_indx, reward, next_state, reward_anti_act]))
                 else:
                     next_state, map_to_food = env._apply_action(act, play.ant_id, current_location, current_state)
            
             play.enviroment.append(map_to_food)
             play.carrying_ant.append(ant_states)
             env.next_position()
+            
+        play.tp.plot_avg_global_ratio(play.global_ratios)
+        play.tp.q_table(play.q_table,episode)
 
-ratio_file = r"A:\THESIS\trial_1\l2\trst_ratios"
+ratio_file = "test_ratios"
 with open(ratio_file, "wb") as f:
     pickle.dump(play.global_ratios,f)
 
-q_file = r"A:\THESIS\trial_1\l2\test_q_table"
+q_file = "test_q_table"
 with open(q_file, "wb") as f:
     pickle.dump(play.q_table,f)
     
-ant_file = r"A:\THESIS\trial_1\l2\test_state_of_ants"
+ant_file = "test_state_of_ants"
 with open(ant_file, "wb") as f:
     pickle.dump(play.carrying_ant,f)
     
-board_file = r"A:\THESIS\trial_1\l2\test_board"
+board_file = "test_board"
 with open(board_file, "wb") as f:
     pickle.dump(play.enviroment,f)
     
