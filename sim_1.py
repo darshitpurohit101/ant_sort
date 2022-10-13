@@ -147,7 +147,7 @@ class Play:
                 update_indx = 1
             next_q_values[i][update_indx] = target
         
-        self.store(states, next_q_values, rewards, rewards_anti_act, actions)
+        self.store(states, next_q_values, tmep_q_table, rewards, rewards_anti_act, actions)
         
         return [next_states, actions], next_q_values
     
