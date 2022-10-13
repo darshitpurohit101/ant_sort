@@ -236,7 +236,7 @@ if __name__ == "__main__" :
             env.next_position()
             
         play.tp.plot_avg_global_ratio(play.global_ratios)
-        play.tp.q_table(play.temp_q_table,episode)
+        play.tp.q_table(tmep_q_table,episode)
 
 ratio_file = "test_ratios"
 with open(ratio_file, "wb") as f:
