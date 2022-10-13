@@ -47,7 +47,7 @@ class Play:
         self.action_tracker = []
         
     
-    def store(self, current_states, q_values, rewards, rewards_anti_act, actions):
+    def store(self, current_states, q_values, episodic_q_table, rewards, rewards_anti_act, actions):
         for i in range(len(current_states)):
             
             '''storing information for debugging'''
@@ -77,6 +77,13 @@ class Play:
                 #format >> q_table={ant_id:[[state, Qvalue_action_1, Qvalue_action_2]....[]]}
                 self.q_table[self.ant_id] = []
             self.q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
+                                        self.action_tracker[indx][0], self.action_tracker[indx][1],
+                                        reward_1, reward_2])
+            #storing data for generating q table after every episode
+            if episodic_q_table.get(self.ant_id) == None:
+                #format >> q_table={ant_id:[[state, Qvalue_action_1, Qvalue_action_2]....[]]}
+                episodic_q_table[self.ant_id] = []
+            episodic_q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
                                         self.action_tracker[indx][0], self.action_tracker[indx][1],
                                         reward_1, reward_2])
     def one_hot_encode(self,action):
@@ -145,11 +152,6 @@ class Play:
         return [next_states, actions], next_q_values
     
     def training(self, x,y, model):
-        print("#########################TRAINING#############################")
-        print(len(x[0]), len(x[1]), len(y))
-        print("##############################################################")
-        # X = np.array(x)
-        # Y = np.array(y)
         model.fit(x, y, batch_size=self.batch_size, verbose=2)
         return model
 
@@ -165,6 +167,7 @@ if __name__ == "__main__" :
         '''reset the game enivronment'''
         env = game.new_initial_state()
         ants = list(range(env.no_ants))
+        tmep_q_table = {}
         play.global_ratios[episode] = []
         for timestep in range(1, 3000):
             global_ratio = env.global_ratio([0,0],2,0) #to get current global ratio give action=2 & ant_id can be any int value
@@ -233,7 +236,7 @@ if __name__ == "__main__" :
             env.next_position()
             
         play.tp.plot_avg_global_ratio(play.global_ratios)
-        play.tp.q_table(play.q_table,episode)
+        play.tp.q_table(play.temp_q_table,episode)
 
 ratio_file = "test_ratios"
 with open(ratio_file, "wb") as f:

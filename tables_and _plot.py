@@ -1,16 +1,14 @@
-import matplotlib.pyplot as plt
+import pickle
 import csv
 
 class Create:
             
-    def plot_avg_global_ratio(self,data):
+    def save_avg_global_ratio(self,data):
+        #store glocal ratio after each episode
         ep = list(data)[-1]
-        y = [i for i in range(len(data[ep]))]
-        plt.plot(y,data[ep], label = "ep1")
-        plt.xlabel("Iterations")
-        plt.ylabel("Average ratio for same color")
-        plt_name = "avg_global_ratio_ep_"+str(ep)
-        plt.savefig(plt_name)
+        file_name = "global_ratio_ep_"+str(ep)
+        with open(file_name, "wb") as f:
+            pickle.dump(data[ep],f)
         
     def q_table(self,data,ep):
         for k in data.keys():
