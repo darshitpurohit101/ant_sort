@@ -22,8 +22,8 @@ class Play:
         self.epsilon=0.4
         self.alpha = 0.2
         self.batch_size = 64
-        self.train_step = 2000
-        self.update_step = 1000
+        self.train_step = 2
+        self.update_step = 1
         self.tp = tables_and_plot.Create()
     
         '''storing the enviroment at the end of each episode'''
@@ -39,6 +39,7 @@ class Play:
         
         ''' Q value info for each ants'''
         self.q_table = {}
+        self.episodic_q_table = {}
         self.ant_id = 0
         
         '''track the states and number of time any action 
@@ -47,7 +48,7 @@ class Play:
         self.action_tracker = []
         
     
-    def store(self, current_states, q_values, episodic_q_table, rewards, rewards_anti_act, actions):
+    def store(self, current_states, q_values, rewards, rewards_anti_act, actions):
         for i in range(len(current_states)):
             
             '''storing information for debugging'''
@@ -80,12 +81,13 @@ class Play:
                                         self.action_tracker[indx][0], self.action_tracker[indx][1],
                                         reward_1, reward_2])
             #storing data for generating q table after every episode
-            if episodic_q_table.get(self.ant_id) == None:
+            if  self.episodic_q_table.get(self.ant_id) == None:
                 #format >> q_table={ant_id:[[state, Qvalue_action_1, Qvalue_action_2]....[]]}
-                episodic_q_table[self.ant_id] = []
-            episodic_q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
+                self.episodic_q_table[self.ant_id] = []
+            self.episodic_q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
                                         self.action_tracker[indx][0], self.action_tracker[indx][1],
                                         reward_1, reward_2])
+        
     def one_hot_encode(self,action):
         actions = np.zeros(2)
         actions[action] = 1
@@ -146,8 +148,7 @@ class Play:
             else:
                 update_indx = 1
             next_q_values[i][update_indx] = target
-        
-        self.store(states, next_q_values, tmep_q_table, rewards, rewards_anti_act, actions)
+        self.store(states, next_q_values, rewards, rewards_anti_act, actions)
         
         return [next_states, actions], next_q_values
     
@@ -163,13 +164,13 @@ if __name__ == "__main__" :
     
     game = ant_sort.AntsGame()
     
-    for episode in range(1):
+    for episode in range(2):
         '''reset the game enivronment'''
         env = game.new_initial_state()
         ants = list(range(env.no_ants))
-        tmep_q_table = {}
+        play.episodic_q_table = {}
         play.global_ratios[episode] = []
-        for timestep in range(1, 3000):
+        for timestep in range(10):
             global_ratio = env.global_ratio([0,0],2,0) #to get current global ratio give action=2 & ant_id can be any int value
             play.global_ratios[episode].append(global_ratio)
             random.shuffle(ants) #randomised order of turns
@@ -188,7 +189,7 @@ if __name__ == "__main__" :
                 if timestep >= play.train_step:
                     if timestep % play.update_step:
                             target_model.set_weights(model.get_weights())
-                    batch = random.sample(play.replay_buffer, play.batch_size)
+                    batch = random.sample(play.replay_buffer, 1)
                     x, y = play.calculate_target(batch, target_model)
                     model = play.training(x,y,model)
                     
@@ -218,15 +219,11 @@ if __name__ == "__main__" :
                     reward_anti_act = env._reward(current_state.tolist(), next_state_fake.tolist())
                     reward_anti_act = reward_anti_act*100
                     reward = env._reward(current_state.tolist(), next_state.tolist())
+                    
+                    if action_indx == 1:
+                        if reward_anti_act < 0:
+                            reward = 0.1
                     reward = reward*100
-                    
-                    if action_indx == 0:
-                        reward_1 = reward
-                        reward_2 = reward_anti_act
-                    else:
-                        reward_1 = reward_anti_act
-                        reward_2 = reward                
-                    
                     play.replay_buffer.append(np.array([current_state, action_indx, reward, next_state, reward_anti_act]))
                 else:
                     next_state, map_to_food = env._apply_action(act, play.ant_id, current_location, current_state)
@@ -236,7 +233,9 @@ if __name__ == "__main__" :
             env.next_position()
             
         play.tp.save_avg_global_ratio(play.global_ratios)
-        play.tp.q_table(tmep_q_table,episode)
+        play.tp.q_table(play.episodic_q_table,episode)
+        model_name = "model_ep_"+str(episode)
+        model.save(model_name)
 
 ratio_file = "test_ratios"
 with open(ratio_file, "wb") as f:
