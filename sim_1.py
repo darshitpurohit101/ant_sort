@@ -40,6 +40,7 @@ class Play:
         ''' Q value info for each ants'''
         self.q_table = {}
         self.episodic_q_table = {}
+        self.predicted_episodic_q_table = {}
         self.ant_id = 0
         
         '''track the states and number of time any action 
@@ -48,7 +49,7 @@ class Play:
         self.action_tracker = []
         
     
-    def store(self, current_states, q_values, rewards, rewards_anti_act, actions):
+    def store(self, current_states, q_values, rewards, rewards_anti_act, actions, ant_states, p_q_values):
         for i in range(len(current_states)):
             
             '''storing information for debugging'''
@@ -84,9 +85,9 @@ class Play:
             if  self.episodic_q_table.get(self.ant_id) == None:
                 #format >> q_table={ant_id:[[state, Qvalue_action_1, Qvalue_action_2]....[]]}
                 self.episodic_q_table[self.ant_id] = []
-            self.episodic_q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1],
-                                        self.action_tracker[indx][0], self.action_tracker[indx][1],
-                                        reward_1, reward_2])
+            self.episodic_q_table[self.ant_id].append([current_states[i], q_values[i][0], q_values[i][1], p_q_values[i][0],
+                                        p_q_values[i][1], self.action_tracker[indx][0], self.action_tracker[indx][1],
+                                        reward_1, reward_2, ant_states[i]])
         
     def one_hot_encode(self,action):
         actions = np.zeros(2)
@@ -125,9 +126,9 @@ class Play:
         return action
     
     def calculate_target(self, batch, target_model):
-        states, actions, rewards, next_states, rewards_anti_act = [], [], [], [], []
+        states, actions, rewards, next_states, rewards_anti_act, ant_states = [], [], [], [], [], []
         for i in batch:
-            state, action, reward, next_state, reward_anti_act = i
+            state, action, reward, next_state, reward_anti_act, ant_state = i
             states.append(state.reshape((9,)))
             action = self.one_hot_encode(action)
             action = np.array(action)
@@ -135,10 +136,12 @@ class Play:
             rewards.append(reward)
             next_states.append(next_state.reshape((9,)))
             rewards_anti_act.append(reward_anti_act)
+            ant_states.append(ant_state)
         
         next_states = np.array(next_states)
         actions = np.array(actions)
         next_q_values = target_model.predict([next_states,actions])
+        p_next_q_values = next_q_values.copy()
         #caculating target and updating q values
         for i in range(len(batch)):
             next_q_value = max(next_q_values[i])
@@ -148,7 +151,7 @@ class Play:
             else:
                 update_indx = 1
             next_q_values[i][update_indx] = target
-        self.store(states, next_q_values, rewards, rewards_anti_act, actions)
+        self.store(states, next_q_values, rewards, rewards_anti_act, actions, ant_states, p_next_q_values)
         
         return [next_states, actions], next_q_values
     
@@ -224,7 +227,7 @@ if __name__ == "__main__" :
                         if reward_anti_act < 0:
                             reward = 0.1
                     reward = reward*100
-                    play.replay_buffer.append(np.array([current_state, action_indx, reward, next_state, reward_anti_act]))
+                    play.replay_buffer.append(np.array([current_state, action_indx, reward, next_state, reward_anti_act, ant_state]))
                 else:
                     next_state, map_to_food = env._apply_action(act, play.ant_id, current_location, current_state)
            
