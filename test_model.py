@@ -7,7 +7,6 @@ import ant_sort
 
 class Play:
     def __init__(self):
-        self.tp = tables_and_plot.Create()
         '''storing the enviroment at the end of each episode'''
         self.enviroment = []
         '''storing the state of the ants after each episode'''
@@ -88,5 +87,5 @@ with open(board_file, "wb") as f:
     pickle.dump(play.enviroment,f)
 
 ant_state_file = "play_ant_states"
-with open(ant_state_file, "wb") as f
+with open(ant_state_file, "wb") as f:
     pickle.dimp(play.carrying_ant,f)
